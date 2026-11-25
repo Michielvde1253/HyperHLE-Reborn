@@ -2,8 +2,6 @@
 /vendor/boost
 /HyperHLE_sandbox
 /DCIM
-/HyperHLE_apps/*.ipa
-/HyperHLE_apps/*.app
 HyperHLE_log.txt
 
 # Xcode (integration testing app)
@@ -38,7 +36,6 @@ DUMP.txt
 
 # Local debug junk
 *.log
-HyperHLE_apps/
 target/
 *.ipa
 touchHLE_pvrtc_cache/
