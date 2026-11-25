@@ -717,7 +717,13 @@ impl Environment {
         let window = if options.headless {
             None
         } else {
-            let icon = bundle.load_icon(&fs);
+            let icon = if options.use_host_icon {
+                let bytes: &[u8] =
+                    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/icon.png"));
+                crate::image::load_image_cached(bytes)
+            } else {
+                bundle.load_icon(&fs)
+            };
             if let Err(ref e) = icon {
                 log!("Warning: {}", e);
             }
@@ -746,19 +752,23 @@ impl Environment {
                         res.ok()
                     })
             };
-            Some(Box::new(window::Window::new(
-                &format!(
-                    "{} ({} {}{}{})",
-                    bundle.display_name(),
+            let host_title = if super::branding().is_empty() {
+                format!("{} {}", super::DISPLAY_NAME, super::VERSION)
+            } else {
+                format!(
+                    "{} {} {}",
                     super::DISPLAY_NAME,
                     super::branding(),
-                    if super::branding().is_empty() {
-                        ""
-                    } else {
-                        " "
-                    },
                     super::VERSION
-                ),
+                )
+            };
+            let title = if bundle.display_name() == super::DISPLAY_NAME {
+                host_title
+            } else {
+                format!("{} ({host_title})", bundle.display_name())
+            };
+            Some(Box::new(window::Window::new(
+                &title,
                 icon.ok(),
                 launch_image.map(|image| (image, false)),
                 &options,

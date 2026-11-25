@@ -177,6 +177,8 @@ pub struct Options {
     /// performance display, FPS limiter, RAM limiter) and an "Exit emulator"
     /// button that goes back to the app picker.
     pub quick_menu: bool,
+    /// Use the host application's icon for the app window instead of the guest's icon.
+    pub use_host_icon: bool,
     /// Exit HyperHLE instead of reopening the app picker when the game window
     /// is closed or the quick menu requests an exit.
     pub exit_instead_of_picker: bool,
@@ -405,6 +407,7 @@ impl Default for Options {
             preserve_aspect_ratio: false,
             trainer_disabled: true,
             quick_menu: false,
+            use_host_icon: false,
             exit_instead_of_picker: false,
             device_family: None,
             auto_device_family: false,
@@ -878,6 +881,10 @@ impl Options {
             self.quick_menu = true;
         } else if arg == "--no-quick-menu" {
             self.quick_menu = false;
+        } else if arg == "--use-host-icon" {
+            self.use_host_icon = true;
+        } else if arg == "--no-host-icon" {
+            self.use_host_icon = false;
         } else if arg == "--exit-instead-of-picker" {
             self.exit_instead_of_picker = true;
         } else if arg == "--no-exit-instead-of-picker" {
@@ -1035,6 +1042,18 @@ mod option_parsing_tests {
             .parse_argument("--no-exit-instead-of-picker")
             .unwrap());
         assert!(!options.exit_instead_of_picker);
+    }
+
+    #[test]
+    fn host_icon_is_opt_in_and_can_be_disabled() {
+        let mut options = Options::default();
+        assert!(!options.use_host_icon);
+
+        assert!(options.parse_argument("--use-host-icon").unwrap());
+        assert!(options.use_host_icon);
+
+        assert!(options.parse_argument("--no-host-icon").unwrap());
+        assert!(!options.use_host_icon);
     }
 
     #[test]

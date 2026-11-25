@@ -663,6 +663,14 @@ Other options:
         Do not create the app's Library/Caches directory, even if enabled by
         an app-specific options file.
 
+    --use-host-icon
+        Use the host application's packaged icon for the app window instead of the
+        guest app's icon. Disabled by default.
+
+    --no-host-icon
+        Use the guest app's icon, even if an app-specific options file enables
+        --use-host-icon.
+
     --reverse-attrib-locations
         When an OpenGL ES 2.0 app binds no attribute locations itself, give
         the active attributes of a linked program the locations 0 to N-1, in

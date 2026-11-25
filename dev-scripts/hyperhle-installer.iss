@@ -26,7 +26,7 @@
   #define OutputDir "."
 #endif
 
-#define AppName "HyperHLE"
+#define AppName "Penguin Wars"
 #define AppExeName "touchHLE.exe"
 
 [Setup]
@@ -48,7 +48,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\res\icon.ico
-UninstallDisplayIcon={app}\{#AppExeName}
+UninstallDisplayIcon={app}\icon.ico
 OutputDir={#OutputDir}
 OutputBaseFilename=HyperHLE_Windows_x86_64_Setup
 Compression=lzma2/max
@@ -70,6 +70,7 @@ Source: "{#BundleDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\touchHLE_dylibs\*"; DestDir: "{app}\touchHLE_dylibs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BundleDir}\touchHLE_fonts\*"; DestDir: "{app}\touchHLE_fonts"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BundleDir}\touchHLE_default_options.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\res\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; The user is expected to edit or replace these, so keep their copies.
 Source: "{#BundleDir}\touchHLE_wallpaper.png"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\HyperHLE_options.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
@@ -82,10 +83,10 @@ Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "gpl-3.0.txt"; DestDir: "{app}"; DestName: "COPYING.txt"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
 Name: "{group}\{#AppName} apps folder"; Filename: "{app}\HyperHLE_apps"
 Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent

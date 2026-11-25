@@ -200,7 +200,7 @@ static GLOBAL: CountingMiMalloc = CountingMiMalloc;
 
 pub use touchHLE_version::*;
 
-pub const DISPLAY_NAME: &str = "HyperHLE-Reborn";
+pub const DISPLAY_NAME: &str = "Penguin Wars";
 
 #[cfg(target_os = "ios")]
 static HOST_EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -506,7 +506,7 @@ fn run_session<T: Iterator<Item = String>>(
 
     let bundle_data = fs::BundleData::open_any(&bundle_path)
         .map_err(|e| format!("Could not open app bundle: {e}"))?;
-    let (bundle, fs) = match bundle::Bundle::new_bundle_and_fs_from_host_path(
+    let (bundle, mut fs) = match bundle::Bundle::new_bundle_and_fs_from_host_path(
         bundle_data,
         /* read_only_mode: */ false,
     ) {
@@ -734,15 +734,11 @@ fn run_session<T: Iterator<Item = String>>(
         assert!(parse_result == Ok(true));
     }
     if options.create_library_caches {
-        let caches_dir = paths::user_data_base_path()
-            .join(paths::SANDBOX_DIR)
-            .join(app_id)
-            .join("Library")
-            .join("Caches");
-        std::fs::create_dir_all(&caches_dir).map_err(|e| {
+        let caches_dir = fs.home_directory().join("Library/Caches");
+        fs.create_dir_all(&caches_dir).map_err(|e| {
             format!(
-                "Could not create app sandbox Library/Caches directory at {}: {e}",
-                caches_dir.display()
+                "Could not create app sandbox Library/Caches directory at {}: {e:?}",
+                caches_dir.as_str()
             )
         })?;
     }

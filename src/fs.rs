@@ -2197,6 +2197,50 @@ mod tests {
     }
 
     #[test]
+    fn create_dir_all_mounts_a_host_directory_created_after_filesystem_setup() {
+        let host_root = std::env::temp_dir().join(format!(
+            "hyperhle-fs-library-caches-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let library_host_path = host_root.join("Library");
+        std::fs::create_dir_all(&library_host_path).unwrap();
+
+        let home_directory = GuestPathBuf::from("/Var/Mobile/Applications/UUID".to_string());
+        let library_node = FsNode::from_host_dir(&library_host_path, true);
+        let mut fs = Fs {
+            root: FsNode::dir().with_child(
+                "Var",
+                FsNode::dir().with_child(
+                    "Mobile",
+                    FsNode::dir().with_child(
+                        "Applications",
+                        FsNode::dir().with_child(
+                            "UUID",
+                            FsNode::dir().with_child("Library", library_node),
+                        ),
+                    ),
+                ),
+            ),
+            working_directory: home_directory.clone(),
+            home_directory: home_directory.clone(),
+            cow_dir: None,
+        };
+
+        let host_caches_path = library_host_path.join("Caches");
+        std::fs::create_dir(&host_caches_path).unwrap();
+
+        let guest_caches_path = home_directory.join("Library/Caches");
+        fs.create_dir_all(&guest_caches_path).unwrap();
+        assert!(fs.is_dir(&guest_caches_path));
+
+        std::fs::remove_dir_all(host_root).unwrap();
+    }
+
+    #[test]
     fn resolves_case_insensitively_and_normalizes_relative_paths() {
         let fs = case_test_fs();
         let absolute: String = fs
