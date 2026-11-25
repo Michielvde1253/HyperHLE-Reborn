@@ -248,15 +248,13 @@ jobs:
         fetch-tags: true
 
     - name: Cache Rust build artifacts
-      uses: actions/cache@main
+      uses: Swatinem/rust-cache@master
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
+        workspaces: ". -> target"
+        # Android builds use a different target triple, so keep their cache
+        # separate from the other jobs and from the old broken one.
+        prefix-key: android-v2
+        cache-on-failure: false
           
     - name: Try to get cached copy of Boost  
       id: cache-boost  
@@ -326,7 +324,13 @@ jobs:
 
 
     - name: Link Android NDK  
-      run: ln -s $PWD'/android-ndk/android-ndk-r25c' $ANDROID_SDK_ROOT'/ndk/25.2.9519653'  
+      run: ln -s $PWD'/android-ndk/android-ndk-r25c' $ANDROID_SDK_ROOT'/ndk/25.2.9519653' 
+
+    - name: Clean stale SDL2 outputs
+      run: |
+        mkdir -p target/aarch64-linux-android/release/deps
+        rm -f target/aarch64-linux-android/release/libSDL2.so \
+              target/aarch64-linux-android/release/deps/libSDL2.so 
 
     - name: Generate local.properties file  
       run: echo 'sdk.dir='$ANDROID_SDK_ROOT > android/local.properties  
