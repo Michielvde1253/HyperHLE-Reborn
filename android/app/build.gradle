@@ -54,6 +54,13 @@ def hyperHLEKeystorePass = System.getenv('HYPERHLE_KEYSTORE_PASSWORD') ?: 'hyper
 def hyperHLEKeyAlias = System.getenv('HYPERHLE_KEY_ALIAS') ?: 'hyperhle'
 def hyperHLECommittedKeystore = file("${rootDir}/keystore/release.keystore")
 def hyperHLEHasReleaseKey = hyperHLEUsesExternalKey || hyperHLECommittedKeystore.exists()
+def bundledAppsAssetsDir = layout.buildDirectory.dir("generated/hyperhle-assets")
+def copyBundledApps = tasks.register("copyBundledApps", Copy) {
+    from(file("${projectDir}/../../HyperHLE_apps")) {
+        include "tinyduels.ipa"
+    }
+    into(bundledAppsAssetsDir.map { it.dir("HyperHLE_apps") })
+}
 
 
 android {
@@ -141,9 +148,14 @@ android {
             jniDebuggable true
         }
     }
+    sourceSets.main {
+        assets.srcDir bundledAppsAssetsDir
+    }
+
     applicationVariants.all { variant ->
         tasks["merge${variant.name.capitalize()}Assets"]
                 .dependsOn("externalNativeBuild${variant.name.capitalize()}")
+                .dependsOn(copyBundledApps)
         variant.outputs.all { output ->
             outputFileName = "HyperHLE-Reborn-${variant.name}.apk"
         }

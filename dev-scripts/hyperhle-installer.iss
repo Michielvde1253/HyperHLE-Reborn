@@ -74,6 +74,7 @@ Source: "{#BundleDir}\touchHLE_default_options.txt"; DestDir: "{app}"; Flags: ig
 Source: "{#BundleDir}\touchHLE_wallpaper.png"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\HyperHLE_options.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\HyperHLE_apps\README.txt"; DestDir: "{app}\HyperHLE_apps"; Flags: ignoreversion
+Source: "..\HyperHLE_apps\tinyduels.ipa"; DestDir: "{app}\HyperHLE_apps"; Flags: ignoreversion
 Source: "..\OPTIONS_HELP.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion

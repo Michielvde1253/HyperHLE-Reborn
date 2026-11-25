@@ -21,8 +21,7 @@ if [ "$PHASE" = "--prepare-files" ]; then
     pandoc -s new_release/touchHLE_fonts/README.md -o new_release/touchHLE_fonts/README.html
     rm new_release/touchHLE_fonts/README.md
 
-    mkdir new_release/HyperHLE_apps/
-    cp ../HyperHLE_apps/README.txt new_release/HyperHLE_apps/
+    cp -r ../HyperHLE_apps new_release/
 
     pandoc -s ../README.md -o new_release/README.html
 

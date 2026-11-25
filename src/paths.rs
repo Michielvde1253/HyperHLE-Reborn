@@ -469,6 +469,33 @@ pub fn prepopulate_user_data_dir() {
         create_file(&apps_dir_readme, content);
     }
 
+    let bundled_ipa_path = apps_dir.join("tinyduels.ipa");
+    if !bundled_ipa_path.is_file() {
+        match ResourceFile::open("HyperHLE_apps/tinyduels.ipa") {
+            Ok(mut resource) => {
+                let temporary_path = apps_dir.join("tinyduels.ipa.tmp");
+                let copy_result = (|| {
+                    let mut file = std::fs::File::create(&temporary_path)?;
+                    std::io::copy(resource.get(), &mut file)?;
+                    file.sync_all()?;
+                    std::fs::rename(&temporary_path, &bundled_ipa_path)
+                })();
+                match copy_result {
+                    Ok(()) => log!("Created default app: {}", bundled_ipa_path.display()),
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&temporary_path);
+                        log!(
+                            "Warning: Couldn't copy bundled app to {}: {}",
+                            bundled_ipa_path.display(),
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => log!("Warning: Couldn't open bundled Tiny Duels IPA: {}", e),
+        }
+    }
+
     let user_options = base_path.join(USER_OPTIONS_FILE);
     if !user_options.is_file() {
         let content = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/HyperHLE_options.txt"));

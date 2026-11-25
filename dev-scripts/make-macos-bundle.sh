@@ -28,6 +28,7 @@ if [[ $# == 3 ]]; then
     cp $PATH_TO_BINARY "$APP_NAME.app"/Contents/MacOS/touchHLE
     cp -r ../touchHLE_dylibs "$APP_NAME.app"/Contents/Resources/
     cp -r ../touchHLE_fonts "$APP_NAME.app"/Contents/Resources/
+    cp -r ../HyperHLE_apps "$APP_NAME.app"/Contents/Resources/
     cp -r ../touchHLE_default_options.txt "$APP_NAME.app"/Contents/Resources/
     cp ../touchHLE_wallpaper.png "$APP_NAME.app"/Contents/Resources/
     cp ../res/"$ICON_NAME.icns" "$APP_NAME.app"/Contents/Resources/

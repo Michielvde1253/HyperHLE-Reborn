@@ -14,6 +14,7 @@ if [[ $# == 1 ]]; then
     cp $PATH_TO_BINARY touchHLE_windows_bundle/
     cp -r ../touchHLE_dylibs touchHLE_windows_bundle/
     cp -r ../touchHLE_fonts touchHLE_windows_bundle/
+    cp -r ../HyperHLE_apps touchHLE_windows_bundle/
     cp -r ../touchHLE_default_options.txt touchHLE_windows_bundle/
     cp ../touchHLE_wallpaper.png touchHLE_windows_bundle/
 else

@@ -646,13 +646,13 @@ Other options:
         enabled by an app-specific options file. Turning the "Movie player
         fix" Settings switch off passes this flag.
 
-    --create-sandbox-caches
-        Create a Caches directory directly inside the app's sandbox before
+    --create-library-caches
+        Create a Library/Caches directory inside the app's sandbox before
         launch. Disabled globally; the bundled default-options file enables
         this for Penguin Wars, which expects this directory to exist.
 
-    --no-create-sandbox-caches
-        Do not create the app's sandbox Caches directory, even if enabled by
+    --no-create-library-caches
+        Do not create the app's Library/Caches directory, even if enabled by
         an app-specific options file.
 
     --reverse-attrib-locations
