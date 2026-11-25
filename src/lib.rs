@@ -663,6 +663,18 @@ fn run_session<T: Iterator<Item = String>>(
         let parse_result = options.parse_argument(&option_arg);
         assert!(parse_result == Ok(true));
     }
+    if options.create_sandbox_caches {
+        let caches_dir = paths::user_data_base_path()
+            .join(paths::SANDBOX_DIR)
+            .join(app_id)
+            .join("Caches");
+        std::fs::create_dir_all(&caches_dir).map_err(|e| {
+            format!(
+                "Could not create app sandbox Caches directory at {}: {e}",
+                caches_dir.display()
+            )
+        })?;
+    }
     // Options that tweak the emulated device profile work by setting
     // `TOUCHHLE_*` environment variables, and several subsystems cache those
     // flags for the lifetime of the process. The app picker runs the same

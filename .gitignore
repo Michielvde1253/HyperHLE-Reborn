@@ -37,7 +37,6 @@ DUMP.txt
 # Local debug junk
 *.log
 target/
-*.ipa
 touchHLE_pvrtc_cache/
 
 # iOS build (platform/ios)

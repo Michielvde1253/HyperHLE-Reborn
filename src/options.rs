@@ -378,6 +378,9 @@ pub struct Options {
     /// enable it for GTA III. Off globally because some other games rely on
     /// the legacy eager-load and automatic fullscreen presentation behaviour.
     pub fix_movie_player: bool,
+    /// Create a `Caches` directory directly inside the app's sandbox.
+    /// Disabled globally and enabled per app through the default options file.
+    pub create_sandbox_caches: bool,
     /// When an OpenGL ES 2.0 app binds no attribute locations itself, give a
     /// linked program's active attributes the locations 0 to N-1 in the
     /// reverse of the order the host driver chose. Turn it on with
@@ -498,6 +501,7 @@ impl Default for Options {
                 .map(|value| value != "0")
                 .unwrap_or(false),
             fix_movie_player: false,
+            create_sandbox_caches: false,
             reverse_attrib_locations: false,
         }
     }
@@ -532,6 +536,10 @@ impl Options {
             self.fix_movie_player = true;
         } else if arg == "--no-fix-movie-player" {
             self.fix_movie_player = false;
+        } else if arg == "--create-sandbox-caches" {
+            self.create_sandbox_caches = true;
+        } else if arg == "--no-create-sandbox-caches" {
+            self.create_sandbox_caches = false;
         } else if arg == "--reverse-attrib-locations" {
             self.reverse_attrib_locations = true;
         } else if arg == "--no-reverse-attrib-locations" {
@@ -1015,6 +1023,20 @@ mod option_parsing_tests {
 
         assert!(options.parse_argument("--no-fix-movie-player").unwrap());
         assert!(!options.fix_movie_player);
+    }
+
+    #[test]
+    fn sandbox_caches_directory_is_opt_in_and_can_be_disabled() {
+        let mut options = Options::default();
+        assert!(!options.create_sandbox_caches);
+
+        assert!(options.parse_argument("--create-sandbox-caches").unwrap());
+        assert!(options.create_sandbox_caches);
+
+        assert!(options
+            .parse_argument("--no-create-sandbox-caches")
+            .unwrap());
+        assert!(!options.create_sandbox_caches);
     }
 
     #[test]

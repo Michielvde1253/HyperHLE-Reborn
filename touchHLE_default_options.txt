@@ -217,6 +217,9 @@ net.hexage.radiant: --force-composition
 # BBR3D
 com.digitalchocolate.iwall: --force-composition
 
+# Penguin Wars (Tiny Duels)
+com.digitalchocolate.ituxwars: --create-sandbox-caches --landscape-left
+
 # NFSU
 com.ea.nfsucinc: --force-composition
 

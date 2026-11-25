@@ -1,1 +1,3 @@
 If you put your .app bundles or .ipa files in this directory, they will show up in the HyperHLE app picker.
+
+Tiny Duels is included by default

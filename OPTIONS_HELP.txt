@@ -646,6 +646,15 @@ Other options:
         enabled by an app-specific options file. Turning the "Movie player
         fix" Settings switch off passes this flag.
 
+    --create-sandbox-caches
+        Create a Caches directory directly inside the app's sandbox before
+        launch. Disabled globally; the bundled default-options file enables
+        this for Penguin Wars, which expects this directory to exist.
+
+    --no-create-sandbox-caches
+        Do not create the app's sandbox Caches directory, even if enabled by
+        an app-specific options file.
+
     --reverse-attrib-locations
         When an OpenGL ES 2.0 app binds no attribute locations itself, give
         the active attributes of a linked program the locations 0 to N-1, in
