@@ -449,6 +449,14 @@ Other options:
     --no-quick-menu
         Hide the quick menu button (the default).
 
+    --exit-instead-of-picker
+        When the user closes the game window or chooses "Exit emulator" from
+        the quick menu, finish the app's termination callbacks and exit
+        HyperHLE instead of reopening the app picker.
+
+    --no-exit-instead-of-picker
+        Return to the app picker after the game is closed (the default).
+
     --force-composition
         Forces presentation of renderbuffer as if no fullscreen EAGL layer is
         present, i.e. renderbuffer will go through the compositor.

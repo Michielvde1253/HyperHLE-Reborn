@@ -177,6 +177,9 @@ pub struct Options {
     /// performance display, FPS limiter, RAM limiter) and an "Exit emulator"
     /// button that goes back to the app picker.
     pub quick_menu: bool,
+    /// Exit HyperHLE instead of reopening the app picker when the game window
+    /// is closed or the quick menu requests an exit.
+    pub exit_instead_of_picker: bool,
     pub initial_orientation: DeviceOrientation,
     /// iOS version reported to guest applications. `None` uses the latest compatibility version.
     pub ios_version: Option<(i32, i32, i32)>,
@@ -402,6 +405,7 @@ impl Default for Options {
             preserve_aspect_ratio: false,
             trainer_disabled: true,
             quick_menu: false,
+            exit_instead_of_picker: false,
             device_family: None,
             auto_device_family: false,
             host_screen_size: None,
@@ -874,6 +878,10 @@ impl Options {
             self.quick_menu = true;
         } else if arg == "--no-quick-menu" {
             self.quick_menu = false;
+        } else if arg == "--exit-instead-of-picker" {
+            self.exit_instead_of_picker = true;
+        } else if arg == "--no-exit-instead-of-picker" {
+            self.exit_instead_of_picker = false;
         } else {
             return Ok(false);
         };
@@ -1011,6 +1019,22 @@ mod option_parsing_tests {
 
         assert!(options.parse_argument("--no-quick-menu").unwrap());
         assert!(!options.quick_menu);
+    }
+
+    #[test]
+    fn exit_instead_of_picker_is_opt_in_and_can_be_disabled() {
+        let mut options = Options::default();
+        assert!(!options.exit_instead_of_picker);
+
+        assert!(options
+            .parse_argument("--exit-instead-of-picker")
+            .unwrap());
+        assert!(options.exit_instead_of_picker);
+
+        assert!(options
+            .parse_argument("--no-exit-instead-of-picker")
+            .unwrap());
+        assert!(!options.exit_instead_of_picker);
     }
 
     #[test]

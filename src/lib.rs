@@ -70,10 +70,75 @@ pub use environment::GuestTermination;
 use environment::{Environment, MutexId, MutexType, ThreadId, PTHREAD_MUTEX_DEFAULT};
 
 use std::alloc::{GlobalAlloc, Layout};
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[cfg(target_os = "ios")]
 use std::sync::atomic::AtomicU32;
+
+fn configured_default_app_path() -> Result<Option<PathBuf>, String> {
+    let mut resource = match paths::ResourceFile::open("HyperHLE_apps/default_app.txt") {
+        Ok(resource) => resource,
+        Err(error) => {
+            log_dbg!("No default app configuration is available: {error}");
+            return Ok(None);
+        }
+    };
+    let mut configured_path = String::new();
+    resource
+        .get()
+        .read_to_string(&mut configured_path)
+        .map_err(|error| format!("Could not read HyperHLE_apps/default_app.txt: {error}"))?;
+
+    let configured_path = configured_path.trim();
+    if configured_path.is_empty() {
+        return Ok(None);
+    }
+
+    let relative_path = std::path::Path::new(configured_path);
+    if !relative_path.is_relative()
+        || relative_path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        return Err(
+            "HyperHLE_apps/default_app.txt must contain a path relative to HyperHLE_apps"
+                .to_string(),
+        );
+    }
+
+    let app_path = paths::user_data_base_path()
+        .join(paths::APPS_DIR)
+        .join(relative_path);
+    if !app_path.exists() {
+        return Err(format!(
+            "The configured default app could not be found at {}",
+            app_path.display()
+        ));
+    }
+    Ok(Some(app_path))
+}
+
+#[cfg(test)]
+mod default_app_tests {
+    #[test]
+    fn packaged_default_app_resolves_to_tiny_duels() {
+        let app_path = super::configured_default_app_path()
+            .unwrap()
+            .expect("a default app is configured");
+
+        assert_eq!(
+            app_path.file_name().and_then(|name| name.to_str()),
+            Some("tinyduels.ipa")
+        );
+        assert!(app_path.is_file());
+    }
+}
 
 static ALLOCATION_METER_ENABLED: AtomicBool = AtomicBool::new(false);
 static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
@@ -418,13 +483,18 @@ fn run_session<T: Iterator<Item = String>>(
                 "No app specified. Use the --help flag to see command-line usage.".to_string(),
             );
         }
-        echo!(
-            "No app specified, opening app picker. Use the --help flag to see command-line usage."
-        );
-        let (bundle_path, mut extra_options) =
-            environment::app_picker::app_picker(options, !returning_to_picker)?;
-        option_args.append(&mut extra_options);
-        bundle_path
+        if let Some(bundle_path) = configured_default_app_path()? {
+            echo!("Launching default app: {}", bundle_path.display());
+            bundle_path
+        } else {
+            echo!(
+                "No app specified, opening app picker. Use the --help flag to see command-line usage."
+            );
+            let (bundle_path, mut extra_options) =
+                environment::app_picker::app_picker(options, !returning_to_picker)?;
+            option_args.append(&mut extra_options);
+            bundle_path
+        }
     };
     // When PowerShell does tab-completion on a directory, for some reason it
     // expands it to `'..\My Bundle.app\'` and that trailing \ seems to

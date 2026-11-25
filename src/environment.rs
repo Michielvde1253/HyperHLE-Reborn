@@ -2130,22 +2130,31 @@ impl Environment {
         );
     }
 
+    fn termination_for_app_close(&self) -> GuestTermination {
+        if self.options.exit_instead_of_picker {
+            GuestTermination::Exit(0)
+        } else {
+            GuestTermination::ReturnToPicker
+        }
+    }
+
     /// Deliver a user-requested shutdown on the guest main thread. Its
     /// interrupted call stays parked while callbacks can wait for worker
     /// threads (for example, to finish saving a world).
-    fn begin_return_to_picker(&mut self, current_context: &mut HostContext) -> bool {
+    fn begin_app_shutdown(&mut self, current_context: &mut HostContext) -> bool {
         if self.interrupted_main_context.is_some() {
             return true;
         }
         if !self.threads[0].active {
             return false;
         }
+        let termination = self.termination_for_app_close();
         let stack = DefaultStack::new(16 * 1024 * 1024)
             .expect("failed to allocate UIKit shutdown coroutine stack");
-        let shutdown = Coroutine::with_stack(stack, |yielder, env: Environment| {
-            run_guest_coroutine(yielder, env, |env| {
+        let shutdown = Coroutine::with_stack(stack, move |yielder, env: Environment| {
+            run_guest_coroutine(yielder, env, move |env| {
                 crate::frameworks::uikit::ui_application::prepare_for_termination(env);
-                env.request_guest_termination(GuestTermination::ReturnToPicker);
+                env.request_guest_termination(termination);
             })
         });
         let mut interrupted = Some(std::mem::replace(current_context, shutdown));
@@ -2179,10 +2188,10 @@ impl Environment {
                     .as_ref()
                     .is_some_and(|window| window.close_requested())
             {
-                echo!("Game window closed; saving app state before returning to the app picker.");
-                if !self.begin_return_to_picker(&mut curr_host_context) {
+                echo!("Game window closed; saving app state.");
+                if !self.begin_app_shutdown(&mut curr_host_context) {
                     self.threads[self.current_thread].host_context = Some(curr_host_context);
-                    return Some(GuestTermination::ReturnToPicker);
+                    return Some(self.termination_for_app_close());
                 }
             }
 
@@ -2247,9 +2256,9 @@ impl Environment {
                 self.apply_quick_menu(&applied);
             }
             if crate::quick_menu::take_exit_request() {
-                if !self.begin_return_to_picker(&mut curr_host_context) {
+                if !self.begin_app_shutdown(&mut curr_host_context) {
                     self.threads[self.current_thread].host_context = Some(curr_host_context);
-                    return Some(GuestTermination::ReturnToPicker);
+                    return Some(self.termination_for_app_close());
                 }
             }
             if let Some(speed) = crate::trainer_ui::take_speed_request() {
@@ -4829,7 +4838,7 @@ mod shutdown_tests {
     // finish saving on worker threads before the environment is destroyed.
     // https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)
     #[test]
-    fn return_to_picker_delivers_main_thread_lifecycle_and_waits_for_save_worker() {
+    fn app_close_uses_configured_termination_after_saving_state() {
         let _lock = ENVIRONMENT_TEST_LOCK.lock().unwrap();
         CALLBACKS.lock().unwrap().clear();
         let options = options::Options {
@@ -4839,6 +4848,11 @@ mod shutdown_tests {
         };
         let icon = image::Image::from_pixels(1, 1, vec![0; 4]);
         let mut env = Environment::new_without_app(options, icon).unwrap();
+        assert!(matches!(
+            env.termination_for_app_close(),
+            GuestTermination::ReturnToPicker
+        ));
+        env.options.exit_instead_of_picker = true;
         let class = env.objc.get_known_class("NSObject", &mut env.mem);
         let types = env.mem.alloc_and_write_cstr(b"v@:@");
         let delegate_imp = env.dyld.create_guest_function(
@@ -4914,9 +4928,9 @@ mod shutdown_tests {
             corosensei::CoroutineResult::Yield(env) => env,
             corosensei::CoroutineResult::Return(_) => panic!("guest did not suspend"),
         };
-        assert!(env.begin_return_to_picker(&mut original));
+        assert!(env.begin_app_shutdown(&mut original));
         env.threads[0].host_context = Some(original);
-        assert!(matches!(env.run(), Some(GuestTermination::ReturnToPicker)));
+        assert!(matches!(env.run(), Some(GuestTermination::Exit(0))));
         assert_eq!(
             *CALLBACKS.lock().unwrap(),
             [

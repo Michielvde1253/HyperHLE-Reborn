@@ -218,7 +218,7 @@ net.hexage.radiant: --force-composition
 com.digitalchocolate.iwall: --force-composition
 
 # Penguin Wars (Tiny Duels)
-com.digitalchocolate.ituxwars: --create-library-caches --landscape-left
+com.digitalchocolate.ituxwars: --create-library-caches --landscape-left --overlay=off --no-quick-menu --no-trainer --exit-instead-of-picker
 
 # NFSU
 com.ea.nfsucinc: --force-composition

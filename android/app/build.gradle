@@ -57,6 +57,7 @@ def hyperHLEHasReleaseKey = hyperHLEUsesExternalKey || hyperHLECommittedKeystore
 def bundledAppsAssetsDir = layout.buildDirectory.dir("generated/hyperhle-assets")
 def copyBundledApps = tasks.register("copyBundledApps", Copy) {
     from(file("${projectDir}/../../HyperHLE_apps")) {
+        include "default_app.txt"
         include "tinyduels.ipa"
     }
     into(bundledAppsAssetsDir.map { it.dir("HyperHLE_apps") })
