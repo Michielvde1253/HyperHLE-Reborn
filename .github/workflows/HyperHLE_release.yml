@@ -326,11 +326,22 @@ jobs:
     - name: Link Android NDK  
       run: ln -s $PWD'/android-ndk/android-ndk-r25c' $ANDROID_SDK_ROOT'/ndk/25.2.9519653' 
 
-    - name: Clean stale SDL2 outputs
+    - name: Ensure libSDL2.so is in place
       run: |
-        mkdir -p target/aarch64-linux-android/release/deps
-        rm -f target/aarch64-linux-android/release/libSDL2.so \
-              target/aarch64-linux-android/release/deps/libSDL2.so 
+        set -eu
+        rel=target/aarch64-linux-android/release
+        mkdir -p "$rel/deps"
+        # On a cache hit cargo skips the sdl2-sys build script, so restore the
+        # library from its cached build output. On a cold cache nothing is
+        # found here and build.rs copies it itself.
+        so=$(find "$rel/build" -path '*sdl2-sys-*/out/lib/libSDL2.so' 2>/dev/null | head -n 1 || true)
+        if [ -n "$so" ]; then
+          cp -f "$so" "$rel/libSDL2.so"
+          cp -f "$so" "$rel/deps/libSDL2.so"
+          echo "Restored libSDL2.so from $so"
+        else
+          echo "No cached SDL2 build output; build.rs will produce it."
+        fi
 
     - name: Generate local.properties file  
       run: echo 'sdk.dir='$ANDROID_SDK_ROOT > android/local.properties  
