@@ -361,6 +361,10 @@ jobs:
         HYPERHLE_KEY_ALIAS: ${{ secrets.HYPERHLE_KEY_ALIAS }}
         ANDROID_NDK_ROOT: '/usr/local/lib/android/sdk/ndk/25.2.9519653'  
         CMAKE: ${{ github.workspace }}/vendor/cmake/bin/cmake  
+        CMAKE_ARGS: "-DCMAKE_INSTALL_LIBDIR=lib"
+        CMAKE_INSTALL_LIBDIR: lib
+
+
 
     - name: Apply APK v3 key-rotation lineage (if configured)
       env:
