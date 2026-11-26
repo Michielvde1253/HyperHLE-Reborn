@@ -114,6 +114,17 @@ pub const CLASSES: ClassExports = objc_classes! {
         .join(plist_file_name);
     let plist_file_path = ns_string::from_rust_string(env, plist_file_path_buf.as_str().to_string());
     let dict: id = msg_class![env; NSDictionary dictionaryWithContentsOfFile:plist_file_path];
+    let user_id_key = ns_string::get_static_str(env, "userID");
+    let user_id: id = if dict == nil {
+        nil
+    } else {
+        msg![env; dict objectForKey:user_id_key]
+    };
+    log!(
+        "NSUserDefaults diagnostic: loaded preferences at {:?}; userID present: {}",
+        plist_file_path_buf,
+        user_id != nil
+    );
 
     let dict: id = if dict == nil {
         msg_class![env; NSMutableDictionary new]
@@ -318,16 +329,31 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)stringForKey:(id)key {
     log_dbg!("NSUserDefaults stringForKey:{}", to_rust_string(env, key));
+    let is_user_id_key = key != nil && to_rust_string(env, key) == "userID";
     let val: id = msg![env; this objectForKey:key];
-    if val == nil { return nil; }
+    if val == nil {
+        if is_user_id_key {
+            log!("NSUserDefaults diagnostic: stringForKey:userID returned no value");
+        }
+        return nil;
+    }
     let val_class: Class = msg![env; val class];
     let ns_string_class = env.objc.get_known_class("NSString", &mut env.mem);
     if env.objc.class_is_subclass_of(val_class, ns_string_class) {
+        if is_user_id_key {
+            log!("NSUserDefaults diagnostic: stringForKey:userID returned a string");
+        }
         return val;
     }
     let ns_number_class = env.objc.get_known_class("NSNumber", &mut env.mem);
     if env.objc.class_is_subclass_of(val_class, ns_number_class) {
+        if is_user_id_key {
+            log!("NSUserDefaults diagnostic: stringForKey:userID converted a number to a string");
+        }
         return msg![env; val stringValue];
+    }
+    if is_user_id_key {
+        log!("NSUserDefaults diagnostic: stringForKey:userID found an incompatible value type");
     }
     nil
 }
@@ -341,18 +367,32 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (id)objectForKey:(id)key { // NSString*
+    let is_user_id_key = key != nil && to_rust_string(env, key) == "userID";
     let app_domain_dict = env.objc.borrow::<NSUserDefaultsHostObject>(this).app_domain_dict;
     let res: id = msg![env; app_domain_dict objectForKey:key];
     if res != nil {
+        if is_user_id_key {
+            log!("NSUserDefaults diagnostic: objectForKey:userID found in app domain");
+        }
         return res;
     }
     let global_domain_dict = env.objc.borrow::<NSUserDefaultsHostObject>(this).global_domain_dict;
     let res = msg![env; global_domain_dict objectForKey:key];
     if res != nil {
+        if is_user_id_key {
+            log!("NSUserDefaults diagnostic: objectForKey:userID found in global domain");
+        }
         return res;
     }
     let registration_domain_dict = env.objc.borrow::<NSUserDefaultsHostObject>(this).registration_domain_dict;
-    msg![env; registration_domain_dict objectForKey:key]
+    let res = msg![env; registration_domain_dict objectForKey:key];
+    if is_user_id_key {
+        log!(
+            "NSUserDefaults diagnostic: objectForKey:userID found in registration domain: {}",
+            res != nil
+        );
+    }
+    res
 }
 
 - (())registerDefaults:(id)registration_dictionary {
@@ -500,7 +540,15 @@ pub const CLASSES: ClassExports = objc_classes! {
     let plist_file_path_buf = plist_file_path_dir.join(plist_file_name);
     let plist_file_path = ns_string::from_rust_string(env, plist_file_path_buf.as_str().to_string());
     let dict = env.objc.borrow::<NSUserDefaultsHostObject>(this).app_domain_dict;
-    msg![env; dict writeToFile:plist_file_path atomically:true]
+    let success: bool = msg![env; dict writeToFile:plist_file_path atomically:true];
+    let user_id_key = ns_string::get_static_str(env, "userID");
+    let user_id: id = msg![env; dict objectForKey:user_id_key];
+    log!(
+        "NSUserDefaults diagnostic: synchronize; userID present: {}; write succeeded: {}",
+        user_id != nil,
+        success
+    );
+    success
 }
 
 @end
