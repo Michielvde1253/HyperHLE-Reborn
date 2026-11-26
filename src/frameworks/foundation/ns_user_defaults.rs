@@ -356,7 +356,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         log!("NSUserDefaults diagnostic: stringForKey:userID found an incompatible value type");
     }
     nil
-}
+} 
 
 // MARK: - Description
 
