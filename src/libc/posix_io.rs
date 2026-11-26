@@ -62,6 +62,26 @@ impl State {
             .and_then(|file_or_none| file_or_none.as_ref())
             .map(|file_obj| &file_obj.file)
     }
+
+    pub fn path_for_fd(&self, fd: FileDescriptor) -> Option<&str> {
+        if fd < NORMAL_FILENO_BASE {
+            return None;
+        }
+        self.files
+            .get(fd_to_file_idx(fd))
+            .and_then(|file_or_none| file_or_none.as_ref())
+            .and_then(|file_obj| file_obj.path.as_deref())
+    }
+
+    pub fn is_fd_writable(&self, fd: FileDescriptor) -> bool {
+        if fd < NORMAL_FILENO_BASE {
+            return false;
+        }
+        self.files
+            .get(fd_to_file_idx(fd))
+            .and_then(|file_or_none| file_or_none.as_ref())
+            .is_some_and(|file_obj| file_obj.status_flags & O_ACCMODE != O_RDONLY)
+    }
 }
 
 /// A single byte-range advisory lock recorded against a file descriptor.

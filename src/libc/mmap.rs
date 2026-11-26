@@ -7,14 +7,17 @@
 use crate::dyld::FunctionExports;
 use crate::environment::Environment;
 use crate::export_c_func;
+use crate::fs::{GuestFile, GuestOpenOptions, GuestPath};
 use crate::libc::errno::{set_errno, EINVAL, EIO, ENOMEM};
 use crate::libc::posix_io;
-use crate::libc::posix_io::{off_t, open_direct, FileDescriptor, SEEK_SET};
+use crate::libc::posix_io::{off_t, open_direct, FileDescriptor};
 use crate::mem::{ConstPtr, GuestUSize, Mem, MutVoidPtr, PAGE_SIZE, PAGE_SIZE_ALIGN_MASK};
 use std::collections::HashMap;
+use std::io::{self, Seek, SeekFrom, Write};
 
 #[allow(dead_code)]
 const MAP_FILE: i32 = 0x0000;
+const MAP_SHARED: i32 = 0x0001;
 const MAP_FIXED: i32 = 0x0010;
 const MAP_ANON: i32 = 0x1000;
 
@@ -24,6 +27,8 @@ const MAP_FAILED: MutVoidPtr = MutVoidPtr::from_bits(0xFFFFFFFF);
 pub struct State {
     /// Keeping track of `mmap` allocations
     allocations: HashMap<MutVoidPtr, GuestUSize>,
+    /// Writable `MAP_SHARED` file mappings that need to be written back.
+    file_mappings: HashMap<MutVoidPtr, SharedFileMapping>,
     /// Page ranges that a partial `munmap` released out of a larger mapping.
     ///
     /// The pages stay backed by the mapping that owns them, so the rest of that
@@ -34,6 +39,87 @@ pub struct State {
     /// Boehm GC's `GC_unmap`/`GC_remap`, and the `munmap`/`mmap` pair in
     /// `TestApp`'s `test_munmap_partial_mapping` - expect `mmap` to behave.
     unmapped: Vec<UnmappedRange>,
+}
+
+struct SharedFileMapping {
+    file: GuestFile,
+    file_offset: u64,
+}
+
+fn open_shared_mapping_file(
+    env: &mut Environment,
+    fd: FileDescriptor,
+) -> io::Result<GuestFile> {
+    let path = env
+        .libc_state
+        .posix_io
+        .path_for_fd(fd)
+        .map(str::to_owned)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "mapping file has no path"))?;
+    let mut options = GuestOpenOptions::new();
+    options.read().write();
+    env.fs
+        .open_with_options(GuestPath::new(path.as_str()), options)
+        .map_err(|()| io::Error::new(io::ErrorKind::PermissionDenied, "cannot reopen mapping file"))
+}
+
+fn write_back_mapping_range(
+    mem: &Mem,
+    mapping_base: MutVoidPtr,
+    mapping_len: GuestUSize,
+    mapping: &mut SharedFileMapping,
+    addr: MutVoidPtr,
+    len: GuestUSize,
+) -> io::Result<()> {
+    let mapping_start = mapping_base.to_bits();
+    let mapping_end = mapping_start.saturating_add(mapping_len);
+    let start = addr.to_bits().max(mapping_start);
+    let end = addr.to_bits().saturating_add(len).min(mapping_end);
+    if start >= end {
+        return Ok(());
+    }
+
+    let relative_offset = u64::try_from(start - mapping_start)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "mapping offset overflow"))?;
+    let file_offset = mapping
+        .file_offset
+        .checked_add(relative_offset)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file offset overflow"))?;
+    let bytes = mem
+        .bytes_at(MutVoidPtr::from_bits(start).cast(), end - start)
+        .to_vec();
+    mapping.file.seek(SeekFrom::Start(file_offset))?;
+    mapping.file.write_all(&bytes)?;
+    mapping.file.sync_all()
+}
+
+fn write_back_file_mapping_range(
+    env: &mut Environment,
+    mapping_base: MutVoidPtr,
+    mapping_len: GuestUSize,
+    addr: MutVoidPtr,
+    len: GuestUSize,
+) -> io::Result<()> {
+    let Some(mapping) = env
+        .libc_state
+        .mmap
+        .file_mappings
+        .get_mut(&mapping_base)
+    else {
+        return Ok(());
+    };
+    write_back_mapping_range(&env.mem, mapping_base, mapping_len, mapping, addr, len)
+}
+
+fn write_back_mapped_range(
+    env: &mut Environment,
+    addr: MutVoidPtr,
+    len: GuestUSize,
+) -> io::Result<()> {
+    let Some((mapping_base, mapping_len)) = owning_mapping(env, addr) else {
+        return Ok(());
+    };
+    write_back_file_mapping_range(env, mapping_base, mapping_len, addr, len)
 }
 
 /// A contiguous page range that [State::unmapped] remembers, together with the
@@ -201,10 +287,49 @@ fn mmap(
         fd,
         offset
     );
+    if (flags & MAP_ANON) == 0 && crate::env_flag_cached!("TOUCHHLE_TRACE_OPEN") {
+        log!(
+            "MMAP-DIAG addr={:?} len={} prot={:#x} flags={:#x} fd={} offset={} path={:?}",
+            addr,
+            len,
+            prot,
+            flags,
+            fd,
+            offset,
+            env.libc_state.posix_io.path_for_fd(fd)
+        );
+    }
 
     if (flags & MAP_FIXED) != 0 {
         return mmap_fixed(env, addr, len, flags, fd, offset);
     }
+
+    let shared_file_mapping = if (flags & MAP_ANON) == 0
+        && (flags & MAP_SHARED) != 0
+        && env.libc_state.posix_io.is_fd_writable(fd)
+    {
+        let file_offset = match u64::try_from(offset) {
+            Ok(offset) => offset,
+            Err(_) => {
+                set_errno(env, EINVAL);
+                return MAP_FAILED;
+            }
+        };
+        match open_shared_mapping_file(env, fd) {
+            Ok(file) => Some(SharedFileMapping { file, file_offset }),
+            Err(error) => {
+                log!(
+                    "Warning: mmap: could not retain writable shared mapping for fd {}: {}",
+                    fd,
+                    error
+                );
+                set_errno(env, EIO);
+                return MAP_FAILED;
+            }
+        }
+    } else {
+        None
+    };
 
     // Darwin returns the hint address when the pages it names are free. The
     // only free address space we can describe is what the guest itself released
@@ -275,21 +400,19 @@ fn mmap(
                 ptr
             );
         }
-        // Seek to the requested offset. If the seek fails (e.g. bad fd),
-        // return MAP_FAILED (-1 as pointer) instead of crashing.
-        let new_offset = posix_io::lseek(env, fd, offset, SEEK_SET);
-        if new_offset != offset {
+        // mmap reads from an offset without changing the descriptor's cursor.
+        let read = posix_io::pread(env, fd, ptr, len, offset);
+        if read < 0 {
             log!(
-                "Warning: mmap: lseek to offset {} failed (returned {}); returning MAP_FAILED",
+                "Warning: mmap: read from offset {} failed on fd {}; returning MAP_FAILED",
                 offset,
-                new_offset
+                fd
             );
             env.mem.free(ptr);
             set_errno(env, EIO);
             return MAP_FAILED;
         }
 
-        let read = posix_io::read(env, fd, ptr, len);
         if (read as u32) < len {
             log!(
                 "Warning: mmap: read only {} of {} bytes from fd {}; padding remainder with zeros",
@@ -303,6 +426,9 @@ fn mmap(
 
     crate::mem::note_allocation_site(env.cpu.regs()[crate::cpu::Cpu::LR], len);
     track_allocation(&mut env.libc_state.mmap.allocations, ptr, len);
+    if let Some(mapping) = shared_file_mapping {
+        env.libc_state.mmap.file_mappings.insert(ptr, mapping);
+    }
     // A brand-new mapping cannot inherit "these pages are free" records from a
     // previous mapping that the allocator recycled the address from.
     let end = ptr.to_bits().saturating_add(len);
@@ -348,6 +474,33 @@ fn mmap_fixed(
     fd: FileDescriptor,
     offset: off_t,
 ) -> MutVoidPtr {
+    let shared_file_mapping = if (flags & MAP_ANON) == 0
+        && (flags & MAP_SHARED) != 0
+        && env.libc_state.posix_io.is_fd_writable(fd)
+    {
+        let file_offset = match u64::try_from(offset) {
+            Ok(offset) => offset,
+            Err(_) => {
+                set_errno(env, EINVAL);
+                return MAP_FAILED;
+            }
+        };
+        match open_shared_mapping_file(env, fd) {
+            Ok(file) => Some(SharedFileMapping { file, file_offset }),
+            Err(error) => {
+                log!(
+                    "Warning: mmap MAP_FIXED: could not retain shared mapping for fd {}: {}",
+                    fd,
+                    error
+                );
+                set_errno(env, EIO);
+                return MAP_FAILED;
+            }
+        }
+    } else {
+        None
+    };
+
     let (len, is_new_mapping) = match map_fixed_zeroed(
         &mut env.mem,
         &mut env.libc_state.mmap.allocations,
@@ -369,12 +522,12 @@ fn mmap_fixed(
     clear_unmapped_ranges(&mut env.libc_state.mmap.unmapped, addr.to_bits(), end);
 
     if (flags & MAP_ANON) == 0 {
-        let new_offset = posix_io::lseek(env, fd, offset, SEEK_SET);
-        if new_offset != offset {
+        let read = posix_io::pread(env, fd, addr, len, offset);
+        if read < 0 {
             log!(
-                "Warning: mmap MAP_FIXED: lseek to offset {} failed (returned {}); returning MAP_FAILED",
+                "Warning: mmap MAP_FIXED: read from offset {} failed on fd {}; returning MAP_FAILED",
                 offset,
-                new_offset
+                fd
             );
             if is_new_mapping {
                 env.libc_state.mmap.allocations.remove(&addr);
@@ -383,7 +536,25 @@ fn mmap_fixed(
             set_errno(env, EIO);
             return MAP_FAILED;
         }
-        posix_io::read(env, fd, addr, len);
+        if (read as u32) < len {
+            log!(
+                "Warning: mmap MAP_FIXED: read only {} of {} bytes from fd {}; padding remainder with zeros",
+                read,
+                len,
+                fd
+            );
+        }
+    }
+
+    if let Some(mapping) = shared_file_mapping {
+        if is_new_mapping || env.libc_state.mmap.allocations.contains_key(&addr) {
+            env.libc_state.mmap.file_mappings.insert(addr, mapping);
+        } else {
+            log!(
+                "Warning: mmap MAP_FIXED shared file mapping at {:?} overlaps an existing allocation and cannot be tracked",
+                addr
+            );
+        }
     }
 
     set_errno(env, 0);
@@ -459,6 +630,7 @@ fn release_mapping(env: &mut Environment, addr: MutVoidPtr, len: GuestUSize) {
     let end = start.saturating_add(len);
     clear_unmapped_ranges(&mut env.libc_state.mmap.unmapped, start, end);
     env.libc_state.mmap.allocations.remove(&addr);
+    env.libc_state.mmap.file_mappings.remove(&addr);
     env.mem.free(addr);
 }
 
@@ -482,6 +654,17 @@ fn munmap(env: &mut Environment, addr: MutVoidPtr, len: GuestUSize) -> i32 {
                 addr,
                 expected_len
             );
+            if let Err(error) =
+                write_back_file_mapping_range(env, addr, expected_len, addr, expected_len)
+            {
+                log!(
+                    "Warning: munmap({:?}, 0) could not write back shared mapping: {}",
+                    addr,
+                    error
+                );
+                set_errno(env, EIO);
+                return -1;
+            }
             release_mapping(env, addr, expected_len);
         } else {
             log_dbg!("munmap({:?}, 0): unknown mapping, treating as no-op", addr);
@@ -501,6 +684,18 @@ fn munmap(env: &mut Environment, addr: MutVoidPtr, len: GuestUSize) -> i32 {
                     mapping_len
                 );
             }
+            if let Err(error) =
+                write_back_file_mapping_range(env, base, mapping_len, addr, mapping_len)
+            {
+                log!(
+                    "Warning: munmap({:?}, {}) could not write back shared mapping: {}",
+                    addr,
+                    len,
+                    error
+                );
+                set_errno(env, EIO);
+                return -1;
+            }
             release_mapping(env, addr, mapping_len);
             return 0; // success
         }
@@ -513,6 +708,19 @@ fn munmap(env: &mut Environment, addr: MutVoidPtr, len: GuestUSize) -> i32 {
         // headers. Remember the range instead, so that an `mmap` passing it as a
         // hint can reuse it the way Darwin reuses free address space.
         if let Some((start, end)) = page_range(addr, len) {
+            let flush_addr = MutVoidPtr::from_bits(start);
+            if let Err(error) =
+                write_back_file_mapping_range(env, base, mapping_len, flush_addr, end - start)
+            {
+                log!(
+                    "Warning: munmap({:?}, {}) could not write back shared mapping: {}",
+                    addr,
+                    len,
+                    error
+                );
+                set_errno(env, EIO);
+                return -1;
+            }
             record_unmapped_range(
                 &mut env.libc_state.mmap.unmapped,
                 base,
@@ -679,20 +887,41 @@ fn munlock(env: &mut Environment, addr: ConstPtr<u8>, len: GuestUSize) -> i32 {
     0
 }
 
-/// `int msync(void *addr, size_t len, int flags)` — synchronize a mapped
-/// region with the file that backs it. touchHLE's `mmap` copies file
-/// content into a guest allocation and never writes it back, and guest
-/// memory is not paged, so there is nothing to flush: report success as
-/// a no-op (Darwin returns 0 on success; returning -1 would make guests
-/// that treat msync failures as fatal — e.g. engines persisting save
-/// data through mmap — abort their write path).
+/// `int msync(void *addr, size_t len, int flags)` — synchronize a writable
+/// shared file mapping with its backing file. Other mappings need no flush.
 ///
 /// Reference: POSIX msync(2) — returns 0 on success, -1 with errno on
 /// failure.
 fn msync(env: &mut Environment, addr: MutVoidPtr, len: GuestUSize, flags: i32) -> i32 {
-    log_dbg!("msync({:?}, {}, {:#x}) -> 0 (no-op)", addr, len, flags);
-    set_errno(env, 0);
-    0
+    log_dbg!("msync({:?}, {}, {:#x})", addr, len, flags);
+    if crate::env_flag_cached!("TOUCHHLE_TRACE_OPEN") {
+        log!(
+            "MSYNC-DIAG addr={:?} len={} flags={:#x}",
+            addr,
+            len,
+            flags
+        );
+    }
+    match write_back_mapped_range(env, addr, len) {
+        Ok(()) => {
+            if crate::env_flag_cached!("TOUCHHLE_TRACE_OPEN") {
+                log!("MSYNC-DIAG operation succeeded");
+            }
+            set_errno(env, 0);
+            0
+        }
+        Err(error) => {
+            log!(
+                "Warning: msync({:?}, {}, {:#x}) could not write back shared mapping: {}",
+                addr,
+                len,
+                flags,
+                error
+            );
+            set_errno(env, EIO);
+            -1
+        }
+    }
 }
 
 pub const FUNCTIONS: FunctionExports = &[
@@ -708,9 +937,11 @@ pub const FUNCTIONS: FunctionExports = &[
 ];
 
 #[cfg(test)]
-mod map_fixed_tests {
+mod mmap_tests {
     use super::*;
     use crate::mem::Ptr;
+    use std::fs::OpenOptions;
+    use std::io::{Read, Seek, SeekFrom};
 
     fn new_test_mem() -> Mem {
         let mut mem = Mem::new();
@@ -800,6 +1031,45 @@ mod map_fixed_tests {
             Err(EINVAL)
         );
         assert!(allocations.is_empty());
+    }
+
+    #[test]
+    fn shared_mapping_flush_writes_only_the_requested_range_at_its_file_offset() {
+        let path = std::env::temp_dir().join(format!(
+            "touchhle-mmap-{}-{}.tmp",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let host_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        host_file.set_len(8).unwrap();
+        let mut mapping = SharedFileMapping {
+            file: GuestFile::File(host_file),
+            file_offset: 1,
+        };
+        let mut mem = new_test_mem();
+        let base = mem.alloc(8);
+        mem.bytes_at_mut(base.cast(), 8)
+            .copy_from_slice(&[10, 11, 12, 13, 14, 15, 16, 17]);
+        let range = MutVoidPtr::from_bits(base.to_bits() + 2);
+
+        write_back_mapping_range(&mem, base, 8, &mut mapping, range, 3).unwrap();
+
+        let mut persisted = [0; 8];
+        mapping.file.seek(SeekFrom::Start(0)).unwrap();
+        mapping.file.read_exact(&mut persisted).unwrap();
+        assert_eq!(persisted, [0, 0, 0, 12, 13, 14, 0, 0]);
+
+        drop(mapping);
+        mem.free(base);
+        std::fs::remove_file(path).unwrap();
     }
 }
 
